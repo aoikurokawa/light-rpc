@@ -1,12 +1,15 @@
 #include <stdio.h>
 
 int main(void) {
-	FILE *fp;
+  FILE *fp;
+  char s[1024];
+  int linecount = 0;
 
-	fp = fopen("hello.txt", "r");
+  fp = fopen("quote.txt", "r");
 
-	int c = fgetc(fp);
-	printf("%c\n", c);
-	
-	fclose(fp);
+  while (fgets(s, sizeof(s), fp) != NULL) {
+    printf("%d: %s", ++linecount, s);
+  }
+
+  fclose(fp);
 }
