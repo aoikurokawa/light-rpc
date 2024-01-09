@@ -1,6 +1,6 @@
 compile:
-	gcc -o hello hello.c
+	gcc -o foo foo.c
 
 run:
-	gcc -o hello hello.c
-	./hello
+	gcc -o foo foo.c
+	./foo
