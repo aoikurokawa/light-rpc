@@ -1,11 +1,13 @@
 #include <stdio.h>
 
-int main(void) {
-  int a[] = {11, 22, 33, 44, 55, 999};
-  int *p = &a[0];
+int my_strlen(char *s) {
+  char *p = s;
 
-  while (*p != 999) {
-    printf("%d\n", *p);
+  while (*p != '\0') {
     p++;
   }
+
+  return p - s;
 }
+
+int main(void) { printf("%d\n", my_strlen("Hello, world!")); }
