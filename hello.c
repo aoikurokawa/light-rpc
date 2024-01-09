@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 struct animal {
@@ -22,13 +23,18 @@ int compar(const void *elem1, const void *elem2) {
 }
 
 int main(void) {
-  char a = 'X';
+  struct animal a[4] = {
+      {.name = "Dog", .leg_count = 4},
+      {.name = "Monkey", .leg_count = 2},
+      {.name = "Antelope", .leg_count = 4},
+      {.name = "Snake", .leg_count = 0},
+  };
 
-  void *p = &a;
-  char *q = p;
+  qsort(a, 4, sizeof(struct animal), compar);
 
-  printf("%c\n", a);
-  printf("%c\n", *q);
+  for (int i = 0; i < 4; i++) {
+    printf("%d: %s\n", a[i].leg_count, a[i].name);
+  }
 }
 
 void *my_memcpy(void *dest, void *src, int byte_count) {
