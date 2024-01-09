@@ -1,23 +1,42 @@
 #include <stdio.h>
 #include <string.h>
 
-int my_strlen(char *s) {
-  char *p = s;
+struct animal {
+  char *name;
+  int leg_count;
+};
 
-  while (*p != '\0') {
-    p++;
+int compar(const void *elem1, const void *elem2) {
+  const struct animal *animal1 = elem1;
+  const struct animal *animal2 = elem2;
+
+  if (animal1->leg_count > animal2->leg_count) {
+    return 1;
   }
 
-  return p - s;
+  if (animal1->leg_count < animal2->leg_count) {
+    return -1;
+  }
+
+  return 0;
 }
 
 int main(void) {
-  int a[] = {11, 22, 33};
-  int b[3];
+  char a = 'X';
 
-  memcpy(b, a, 3 * sizeof(int));
+  void *p = &a;
+  char *q = p;
 
-  for (int i = 0; i < 3; i++) {
-    printf("%d\n", b[i]);
+  printf("%c\n", a);
+  printf("%c\n", *q);
+}
+
+void *my_memcpy(void *dest, void *src, int byte_count) {
+  char *s = src, *d = dest;
+
+  while (byte_count--) {
+    *d++ = *s++;
   }
+
+  return dest;
 }
