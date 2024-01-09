@@ -3,8 +3,8 @@
 int main(void) {
   FILE *fp;
   char name[1024];
-	float length;
-	int mass;
+  float length;
+  int mass;
 
   fp = fopen("whale.txt", "r");
 
