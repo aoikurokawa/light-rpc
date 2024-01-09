@@ -1,18 +1,12 @@
 #include <stdio.h>
 
-int plus_one(int n)  {
-	return n + 1;
-}
-
 int main(void) {
-	int i;
-	int *p;
+	FILE *fp;
 
-	p = &i;
+	fp = fopen("hello.txt", "r");
 
-	i = 10;
-	*p = 20;
+	int c = fgetc(fp);
+	printf("%c\n", c);
 	
-	printf("i is %d\n", i);
-	printf("i is %d\n", *p);
+	fclose(fp);
 }
