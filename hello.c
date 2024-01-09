@@ -2,13 +2,15 @@
 #include <stdlib.h>
 
 int main(void) {
-  int *p = malloc(sizeof(int));
+  int *x;
 
-  *p = 12;
+  // x = malloc(sizeof(int) * 10);
 
-  printf("%d\n", *p);
+  if (x == NULL) {
+    printf("Error allocating 10 ints\n");
+  }
 
-  free(p);
-
-  printf("%d\n", *p);
+  if ((x = malloc(sizeof(int) * 10)) == NULL) {
+    printf("Error allocating 10 ints\n");
+  }
 }
