@@ -10,5 +10,5 @@ int main(int argc, char **argv) {
   int *p = &x;
   int **q = &p;
 
-  printf("%d %d\n", *p, **q);
+  printf("%p %p\n", p, q);
 }
