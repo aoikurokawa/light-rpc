@@ -7,8 +7,8 @@
 
 int main(int argc, char **argv) {
   int x = 3490;
-  int *p = &x;
-  int **q = &p;
+  int *const p = &x;
+  int *const *q = &p;
 
-  printf("%p %p\n", p, q);
+  printf("%d\n", *p + 1);
 }
