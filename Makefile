@@ -1,6 +1,6 @@
 compile:
-	gcc -o foo foo.c
+	gcc -o main main.c
 
 run:
 	gcc -o main main.c
-	./main 12345
+	./main 

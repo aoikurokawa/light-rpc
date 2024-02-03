@@ -1,85 +1,51 @@
+#include <arpa/inet.h>
 #include <netdb.h>
+#include <netinet/in.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <unistd.h>
-
-#define BUF_SIZE 500
 
 int main(int argc, char *argv[]) {
-  int sfd, s;
-  char buf[BUF_SIZE];
-  ssize_t nread;
-  socklen_t peer_addrlen;
-  struct addrinfo hints;
-  struct addrinfo *result, *rp;
-  struct sockaddr_storage peer_addr;
+  struct addrinfo hints, *res, *p;
+  int status;
+  char ipstr[INET6_ADDRSTRLEN];
 
   if (argc != 2) {
-    fprintf(stderr, "Usage: %s port\n", argv[0]);
-    exit(EXIT_FAILURE);
+    fprintf(stderr, "usage: showip hostname\n");
+    return 1;
   }
 
-  memset(&hints, 0, sizeof(hints));
+  memset(&hints, 0, sizeof hints);
   hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_DGRAM;
-  hints.ai_flags = AI_PASSIVE;
-  hints.ai_protocol = 0;
-  hints.ai_canonname = NULL;
-  hints.ai_addr = NULL;
-  hints.ai_next = NULL;
+  hints.ai_socktype = SOCK_STREAM;
 
-  s = getaddrinfo(NULL, argv[1], &hints, &result);
-  if (s != 0) {
-    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+  if ((status = getaddrinfo(argv[1], NULL, &hints, &res)) != 0) {
+    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
+    return 2;
   }
 
-  for (rp = result; rp != NULL; rp = rp->ai_next) {
-    sfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+  printf("IP addresses for %s:\n\n", argv[1]);
 
-    if (sfd == -1) {
-      continue;
-    }
+  for (p = res; p != NULL; p = p->ai_next) {
+    void *addr;
+    char *ipver;
 
-    if (bind(sfd, rp->ai_addr, rp->ai_addrlen) == 0) {
-      break;
-    }
-
-    close(sfd);
-  }
-
-  freeaddrinfo(result);
-
-  if (rp == NULL) {
-    fprintf(stderr, "Cound not bind\n");
-    exit(EXIT_FAILURE);
-  }
-
-  for (;;) {
-    char host[NI_MAXHOST], service[NI_MAXSERV];
-
-    peer_addrlen = sizeof(peer_addr);
-    nread = recvfrom(sfd, buf, BUF_SIZE, 0, (struct sockaddr *)&peer_addr,
-                     &peer_addrlen);
-
-    if (nread == -1) {
-      continue;
-    }
-
-    s = getnameinfo((struct sockaddr *)&peer_addr, peer_addrlen, host,
-                    NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICSERV);
-
-    if (s == 0) {
-      printf("Received %zd bytes from %s:%s\n", nread, host, service);
+    if (p->ai_family == AF_INET) {
+      struct sockaddr_in *ipv4 = (struct sockaddr_in *)p->ai_addr;
+      addr = &(ipv4->sin_addr);
+      ipver = "IPv4";
     } else {
-      fprintf(stderr, "getnameinfo: %s\n", gai_strerror(s));
+      struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)p->ai_addr;
+      addr = &(ipv6->sin6_addr);
+      ipver = "IPv6";
     }
 
-    if (sendto(sfd, buf, nread, 0, (struct sockaddr *)&peer_addr,
-               peer_addrlen) != nread) {
-      fprintf(stderr, "Error sending response\n");
-    }
+    inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
+    printf(" %s: %s\n", ipver, ipstr);
   }
+
+  freeaddrinfo(res);
+
+  return 0;
 }
