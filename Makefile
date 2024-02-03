@@ -2,5 +2,5 @@ compile:
 	gcc -o foo foo.c
 
 run:
-	gcc -o foo foo.c
-	./foo
+	gcc -o main main.c
+	./main 12345
