@@ -1,4 +1,6 @@
+#include <arpa/inet.h>
 #include <netdb.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,82 +9,75 @@
 #include <unistd.h>
 
 #define BUF_SIZE 500
+#define PORT "3490"
+#define MAXDATASIZE 100
+
+void *get_in_addr(struct sockaddr *sa) {
+  if (sa->sa_family == AF_INET) {
+    return &(((struct sockaddr_in *)sa)->sin_addr);
+  }
+
+  return &(((struct sockaddr_in6 *)sa)->sin6_addr);
+}
 
 int main(int argc, char *argv[]) {
-  int sfd, s;
-  char buf[BUF_SIZE];
-  size_t len;
-  ssize_t nread;
-  struct addrinfo hints;
-  struct addrinfo *result, *rp;
+  int sockfd, numbytes;
+  char buf[MAXDATASIZE];
+  struct addrinfo hints, *servinfo, *p;
+  int rv;
+  char s[INET6_ADDRSTRLEN];
 
-  if (argc < 3) {
-    fprintf(stderr, "Usage: %s host port msg...\n", argv[0]);
-    exit(EXIT_FAILURE);
+  if (argc != 2) {
+    fprintf(stderr, "usage: client hostname\n");
+    exit(1);
   }
 
-  /* Obtain address(es) matching host/port. */
+  memset(&hints, 0, sizeof hints);
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
 
-  memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
-  hints.ai_socktype = SOCK_DGRAM; /* Datagram socket */
-  hints.ai_flags = 0;
-  hints.ai_protocol = 0; /* Any protocol */
-
-  s = getaddrinfo(argv[1], argv[2], &hints, &result);
-  if (s != 0) {
-    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
-    exit(EXIT_FAILURE);
+  if ((rv = getaddrinfo(argv[1], PORT, &hints, &servinfo)) != 0) {
+    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+    return 1;
   }
 
-  /* getaddrinfo() returns a list of address structures.
-     Try each address until we successfully connect(2).
-     If socket(2) (or connect(2)) fails, we (close the socket
-     and) try the next address. */
-
-  for (rp = result; rp != NULL; rp = rp->ai_next) {
-    sfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-    if (sfd == -1)
-      continue;
-
-    if (connect(sfd, rp->ai_addr, rp->ai_addrlen) != -1)
-      break; /* Success */
-
-    close(sfd);
-  }
-
-  freeaddrinfo(result); /* No longer needed */
-
-  if (rp == NULL) { /* No address succeeded */
-    fprintf(stderr, "Could not connect\n");
-    exit(EXIT_FAILURE);
-  }
-
-  /* Send remaining command-line arguments as separate
-     datagrams, and read responses from server. */
-
-  for (size_t j = 3; j < argc; j++) {
-    len = strlen(argv[j]) + 1;
-    /* +1 for terminating null byte */
-
-    if (len > BUF_SIZE) {
-      fprintf(stderr, "Ignoring long message in argument %zu\n", j);
+  for (p = servinfo; p != NULL; p = p->ai_next) {
+    if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+      perror("client: socket");
       continue;
     }
 
-    if (write(sfd, argv[j], len) != len) {
-      fprintf(stderr, "partial/failed write\n");
-      exit(EXIT_FAILURE);
+    if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+      close(sockfd);
+      perror("client: connect");
+      continue;
     }
 
-    nread = read(sfd, buf, BUF_SIZE);
-    if (nread == -1) {
-      perror("read");
-      exit(EXIT_FAILURE);
-    }
-
-    printf("Received %zd bytes: %s\n", nread, buf);
+    break;
   }
 
-  exit(EXIT_SUCCESS);
+  if (p == NULL) {
+    fprintf(stderr, "client: failed to connect\n");
+    return 2;
+  }
+
+  inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), s,
+            sizeof s);
+
+  printf("client: connecting to %s\n", s);
+
+  freeaddrinfo(servinfo);
+
+  if ((numbytes = recv(sockfd, buf, MAXDATASIZE - 1, 0)) == -1) {
+    perror("recv");
+    exit(1);
+  }
+
+  buf[numbytes] = '\0';
+
+  printf("client: received '%s'\n", buf);
+
+  close(sockfd);
+
+  return 0;
 }
