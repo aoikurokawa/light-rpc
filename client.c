@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 #define BUF_SIZE 500
-#define PORT "3490"
+#define SERVERPORT "4950"
 #define MAXDATASIZE 100
 
 void *get_in_addr(struct sockaddr *sa) {
@@ -21,35 +21,28 @@ void *get_in_addr(struct sockaddr *sa) {
 }
 
 int main(int argc, char *argv[]) {
-  int sockfd, numbytes;
-  char buf[MAXDATASIZE];
+  int sockfd;
   struct addrinfo hints, *servinfo, *p;
   int rv;
-  char s[INET6_ADDRSTRLEN];
+  int numbytes;
 
-  if (argc != 2) {
-    fprintf(stderr, "usage: client hostname\n");
+  if (argc != 3) {
+    fprintf(stderr, "usage: talker hostname message\n");
     exit(1);
   }
 
-  memset(&hints, 0, sizeof hints);
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_STREAM;
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_DGRAM;
 
-  if ((rv = getaddrinfo(argv[1], PORT, &hints, &servinfo)) != 0) {
+  if ((rv = getaddrinfo(argv[1], SERVERPORT, &hints, &servinfo)) != 0) {
     fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
     return 1;
   }
 
   for (p = servinfo; p != NULL; p = p->ai_next) {
     if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
-      perror("client: socket");
-      continue;
-    }
-
-    if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-      close(sockfd);
-      perror("client: connect");
+      perror("talker: socket");
       continue;
     }
 
@@ -57,26 +50,19 @@ int main(int argc, char *argv[]) {
   }
 
   if (p == NULL) {
-    fprintf(stderr, "client: failed to connect\n");
+    fprintf(stderr, "talker: failed to create socket\n");
     return 2;
   }
 
-  inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), s,
-            sizeof s);
-
-  printf("client: connecting to %s\n", s);
-
-  freeaddrinfo(servinfo);
-
-  if ((numbytes = recv(sockfd, buf, MAXDATASIZE - 1, 0)) == -1) {
-    perror("recv");
+  if ((numbytes = sendto(sockfd, argv[2], strlen(argv[2]), 0, p->ai_addr,
+                         p->ai_addrlen)) == -1) {
+    perror("taker: sendto");
     exit(1);
   }
 
-  buf[numbytes] = '\0';
+  freeaddrinfo(servinfo);
 
-  printf("client: received '%s'\n", buf);
-
+  printf("talker: send %d bytes to %s\n", numbytes, argv[1]);
   close(sockfd);
 
   return 0;
