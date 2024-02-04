@@ -1,9 +1,14 @@
-use std::net::{SocketAddrV4, TcpListener};
+use std::{net::TcpListener, time::SystemTime};
 
 fn main() {
     let listner = TcpListener::bind("127.0.0.1:8080").unwrap();
     match listner.accept() {
-        Ok((_socket, addr)) => println!("new client: {addr:?}"),
+        Ok((socket, addr)) => {
+            let now = SystemTime::now();
+
+            println!("new client: {addr:?}");
+            println!("now: {:?}", now);
+        }
         Err(e) => println!("couldn't get client: {e:?}"),
     }
 }
