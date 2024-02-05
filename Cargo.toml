@@ -1,1 +1,5 @@
-workspace = { members = ["intro"] }
+[workspace]  
+members = [
+	"intro"
+] 
+resolver = "2"
