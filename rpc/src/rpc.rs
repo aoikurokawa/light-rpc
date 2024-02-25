@@ -1170,7 +1170,7 @@ impl JsonRpcRequestProcessor {
         Err(RpcCustomError::BlockNotAvailable { slot }.into())
     }
 
-    pub async fn get_headers(
+    pub async fn get_block_headers(
         &self,
         blockhash: RpcBlockhash,
         slot: Slot,
@@ -3434,6 +3434,14 @@ pub mod rpc_full {
             commitment: Option<CommitmentConfig>,
         ) -> BoxFuture<Result<Vec<Slot>>>;
 
+        #[rpc(meta, name = "getBlockHeaders")]
+        fn get_block_headers(
+            &self,
+            meta: Self::Metadata,
+            slot: Slot,
+            config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
+        ) -> BoxFuture<Result<Vec<BlockHeader>>>;
+
         #[rpc(meta, name = "getBlocksWithLimit")]
         fn get_blocks_with_limit(
             &self,
@@ -3926,6 +3934,16 @@ pub mod rpc_full {
         ) -> BoxFuture<Result<Option<UiConfirmedBlock>>> {
             debug!("get_block rpc request received: {:?}", slot);
             Box::pin(async move { meta.get_block(slot, config).await })
+        }
+
+        fn get_block_headers(
+            &self,
+            meta: Self::Metadata,
+            slot: Slot,
+            config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
+        ) -> BoxFuture<Result<Option<Vec<BlockHeader>>>> {
+            debug!("get_block rpc request received: {:?}", slot);
+            Box::pin(async move { meta.get_block_headers(slot, config).await })
         }
 
         fn get_blocks(
