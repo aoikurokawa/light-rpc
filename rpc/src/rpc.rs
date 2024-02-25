@@ -1,6 +1,7 @@
 //! The `rpc` module implements the Solana RPC interface.
 
 use itertools::Itertools;
+use solana_account_decoder::{parse_stake::UiStakeAccount, UiAccountData};
 use solana_sdk::message::AccountKeys;
 use solana_transaction_status::{BlockHeader, EncodedTransaction};
 use {
@@ -1194,7 +1195,7 @@ impl JsonRpcRequestProcessor {
                             let mut header = BlockHeader {
                                 vote_signature: Some(inner_txn.signatures[0].to_owned()),
                                 validator_identity: None,
-                                validator_sake: None,
+                                validator_stake: None,
                             };
                             let ixdata = &message.instructions[0];
 
@@ -1219,6 +1220,23 @@ impl JsonRpcRequestProcessor {
                                         serde_json::from_value(ix.info).unwrap();
                                     header.validator_identity =
                                         Some(vote_state.authorized_withdrawer);
+                                    let stake_account = self.get_account_info(
+                                        &Pubkey::from_str(account_keys[1].pubkey.as_str())
+                                            .unwrap(),
+                                        None,
+                                    );
+                                    let stake_acc = stake_account.unwrap().value.unwrap().data;
+                                    match stake_acc {
+                                        UiAccountData::Json(stake_acc) => {
+                                            let parsed: UiStakeAccount =
+                                                serde_json::from_value(stake_acc.parsed).unwrap();
+                                            eprintln!(
+                                                "{:?}",
+                                                parsed.stake.unwrap().delegation.stake
+                                            );
+                                        }
+                                        _ => {}
+                                    }
 
                                     let node_balance_position = account_keys
                                         .into_iter()
@@ -1228,7 +1246,7 @@ impl JsonRpcRequestProcessor {
                                         .unwrap();
 
                                     let meta = outer_txn.meta.unwrap();
-                                    header.validator_sake = Some(
+                                    header.validator_stake = Some(
                                         meta.pre_balances[node_balance_position]
                                             - (meta.post_balances[node_balance_position]
                                                 + meta.fee),

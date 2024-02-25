@@ -836,7 +836,7 @@ pub struct EntrySummary {
 pub struct BlockHeader {
     pub vote_signature: Option<String>,
     pub validator_identity: Option<Pubkey>,
-    pub validator_sake: Option<u64>,
+    pub validator_stake: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
