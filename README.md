@@ -1,36 +1,147 @@
-3. Decentralized Peer Discovery Service
+<p align="center">
+  <a href="https://solana.com">
+    <img alt="Solana" src="https://i.imgur.com/IKyzQ6T.png" width="250" />
+  </a>
+</p>
 
-    Project Idea: Build a service that helps blockchain nodes discover each other in a decentralized network, enhancing the network's robustness and connectivity.
-    Key Concepts: Service discovery protocols, UDP for lightweight broadcasting or multicasting, handling dynamic IP addresses and NAT traversal.
-    Learning Outcome: Learn about the challenges of peer discovery in decentralized networks, especially in varied network conditions and configurations.
+[![Solana crate](https://img.shields.io/crates/v/solana-core.svg)](https://crates.io/crates/solana-core)
+[![Solana documentation](https://docs.rs/solana-core/badge.svg)](https://docs.rs/solana-core)
+[![Build status](https://badge.buildkite.com/8cc350de251d61483db98bdfc895b9ea0ac8ffa4a32ee850ed.svg?branch=master)](https://buildkite.com/solana-labs/solana/builds?branch=master)
+[![codecov](https://codecov.io/gh/solana-labs/solana/branch/master/graph/badge.svg)](https://codecov.io/gh/solana-labs/solana)
 
-Yes, a Decentralized Peer Discovery Service can indeed utilize a gossip protocol or similar mechanisms for peer discovery and information dissemination in a decentralized network. The gossip protocol is a popular approach in distributed systems, including blockchain networks, for efficiently spreading information (such as transactions, blocks, or peer availability) across all nodes in the network.
-Gossip Protocol in Peer Discovery:
+# Building
 
-In the context of peer discovery, a gossip protocol could work as follows:
+## **1. Install rustc, cargo and rustfmt.**
 
-    Initial Peer List: Each node starts with an initial list of known peers. This list can be hardcoded, obtained from a configuration file, or received from a bootstrap node.
+```bash
+$ curl https://sh.rustup.rs -sSf | sh
+$ source $HOME/.cargo/env
+$ rustup component add rustfmt
+```
 
-    Periodic Gossiping: At regular intervals, nodes randomly select a few peers from their list and share their current list of known peers with them. This sharing can happen over UDP for efficiency, given its connectionless nature, which is suitable for sending small amounts of data to multiple peers.
+When building the master branch, please make sure you are using the latest stable rust version by running:
 
-    Peer List Merging: When a node receives a list of peers from another node, it merges this list with its own, adding any new peers it wasn't aware of. The node might also attempt to establish a connection with some of these new peers to verify their availability.
+```bash
+$ rustup update
+```
 
-    Network Dynamics Handling: The protocol can handle nodes joining and leaving the network by continuously updating peer lists based on successful and failed connection attempts. Nodes might also implement strategies to avoid overloading any single peer with connection attempts or information requests.
+When building a specific release branch, you should check the rust version in `ci/rust-version.sh` and if necessary, install that version by running:
+```bash
+$ rustup install VERSION
+```
+Note that if this is not the latest rust version on your machine, cargo commands may require an [override](https://rust-lang.github.io/rustup/overrides.html) in order to use the correct version.
 
-    Scalability and Efficiency: To maintain scalability and efficiency, the gossip protocol can incorporate mechanisms like:
-        Subsampling: Only gossiping to a subset of peers at a time.
-        Backoff Algorithms: Reducing the frequency of gossip messages to peers that have already shared similar information.
-        TTL (Time To Live): Including a TTL counter in gossip messages to prevent infinite propagation.
+On Linux systems you may need to install libssl-dev, pkg-config, zlib1g-dev, protobuf etc.
 
-Use Cases in Blockchain:
+On Ubuntu:
+```bash
+$ sudo apt-get update
+$ sudo apt-get install libssl-dev libudev-dev pkg-config zlib1g-dev llvm clang cmake make libprotobuf-dev protobuf-compiler
+```
 
-In blockchain networks, gossip protocols are not only used for peer discovery but also for propagating transactions and blocks. By leveraging the decentralized and resilient nature of gossip protocols, blockchain networks can ensure that data reaches all nodes without the need for a central authority or vulnerable central points of failure.
-Building a Decentralized Peer Discovery Service:
+On Fedora:
+```bash
+$ sudo dnf install openssl-devel systemd-devel pkg-config zlib-devel llvm clang cmake make protobuf-devel protobuf-compiler perl-core
+```
 
-When designing your peer discovery service with a gossip protocol, consider the following:
+## **2. Download the source code.**
 
-    Protocol Design: Define the structure of gossip messages, including the list of peers and any metadata like node capabilities or services offered.
-    Security Measures: Implement security measures to prevent common threats such as Eclipse attacks, where an attacker tries to monopolize a node's peer connections, or Sybil attacks, where the network is flooded with fake identities.
-    Testing and Simulation: Test the protocol under various network conditions and scales to ensure it performs well in real-world scenarios, adjusting parameters like gossip frequency and peer list sizes as needed.
+```bash
+$ git clone https://github.com/solana-labs/solana.git
+$ cd solana
+```
 
-By applying your knowledge from "UNIX Network Programming", you can handle the low-level networking aspects of implementing a gossip protocol, such as socket management, data serialization over the network, and handling network errors and dynamics.
+## **3. Build.**
+
+```bash
+$ ./cargo build
+```
+
+# Testing
+
+**Run the test suite:**
+
+```bash
+$ ./cargo test
+```
+
+### Starting a local testnet
+
+Start your own testnet locally, instructions are in the [online docs](https://docs.solanalabs.com/clusters/benchmark).
+
+### Accessing the remote development cluster
+
+* `devnet` - stable public cluster for development accessible via
+devnet.solana.com. Runs 24/7. Learn more about the [public clusters](https://docs.solanalabs.com/clusters)
+
+# Benchmarking
+
+First, install the nightly build of rustc. `cargo bench` requires the use of the
+unstable features only available in the nightly build.
+
+```bash
+$ rustup install nightly
+```
+
+Run the benchmarks:
+
+```bash
+$ cargo +nightly bench
+```
+
+# Release Process
+
+The release process for this project is described [here](RELEASE.md).
+
+# Code coverage
+
+To generate code coverage statistics:
+
+```bash
+$ scripts/coverage.sh
+$ open target/cov/lcov-local/index.html
+```
+
+Why coverage? While most see coverage as a code quality metric, we see it primarily as a developer
+productivity metric. When a developer makes a change to the codebase, presumably it's a *solution* to
+some problem.  Our unit-test suite is how we encode the set of *problems* the codebase solves. Running
+the test suite should indicate that your change didn't *infringe* on anyone else's solutions. Adding a
+test *protects* your solution from future changes. Say you don't understand why a line of code exists,
+try deleting it and running the unit-tests. The nearest test failure should tell you what problem
+was solved by that code. If no test fails, go ahead and submit a Pull Request that asks, "what
+problem is solved by this code?" On the other hand, if a test does fail and you can think of a
+better way to solve the same problem, a Pull Request with your solution would most certainly be
+welcome! Likewise, if rewriting a test can better communicate what code it's protecting, please
+send us that patch!
+
+# Disclaimer
+
+All claims, content, designs, algorithms, estimates, roadmaps,
+specifications, and performance measurements described in this project
+are done with the Solana Labs, Inc. (“SL”) good faith efforts. It is up to
+the reader to check and validate their accuracy and truthfulness.
+Furthermore, nothing in this project constitutes a solicitation for
+investment.
+
+Any content produced by SL or developer resources that SL provides are
+for educational and inspirational purposes only. SL does not encourage,
+induce or sanction the deployment, integration or use of any such
+applications (including the code comprising the Solana blockchain
+protocol) in violation of applicable laws or regulations and hereby
+prohibits any such deployment, integration or use. This includes the use of
+any such applications by the reader (a) in violation of export control
+or sanctions laws of the United States or any other applicable
+jurisdiction, (b) if the reader is located in or ordinarily resident in
+a country or territory subject to comprehensive sanctions administered
+by the U.S. Office of Foreign Assets Control (OFAC), or (c) if the
+reader is or is working on behalf of a Specially Designated National
+(SDN) or a person subject to similar blocking or denied party
+prohibitions.
+
+The reader should be aware that U.S. export control and sanctions laws prohibit 
+U.S. persons (and other persons that are subject to such laws) from transacting 
+with persons in certain countries and territories or that are on the SDN list. 
+Accordingly, there is a risk to individuals that other persons using any of the 
+code contained in this repo, or a derivation thereof, may be sanctioned persons 
+and that transactions with such persons would be a violation of U.S. export 
+controls and sanctions law.
