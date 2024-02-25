@@ -2,7 +2,7 @@
 
 use itertools::Itertools;
 use solana_sdk::message::AccountKeys;
-use solana_transaction_status::{BlockHeader, EncodedTransaction, UiParsedInstruction};
+use solana_transaction_status::{BlockHeader, EncodedTransaction};
 use {
     crate::{
         max_slots::MaxSlots, optimistically_confirmed_bank_tracker::OptimisticallyConfirmedBank,
@@ -1172,43 +1172,42 @@ impl JsonRpcRequestProcessor {
 
     pub async fn get_block_headers(
         &self,
-        blockhash: RpcBlockhash,
         slot: Slot,
         config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
-    ) {
-        let vote_program_id = "Vote111111111111111111111111111111111111111".to_string();
+    ) -> Result<Option<Vec<BlockHeader>>> {
+        let vote_program_id = "Vote111111111111111111111111111111111111111";
         let block = self.get_block(slot, config).await;
-        let headers: Vec<BlockHeader> = Vec::new();
+        let mut headers: Vec<BlockHeader> = Vec::new();
 
         for outer_txn in block.unwrap().unwrap().transactions.unwrap() {
-            let block_header = match outer_txn.transaction {
+            match outer_txn.transaction {
                 EncodedTransaction::Json(inner_txn) => match inner_txn.message {
                     solana_transaction_status::UiMessage::Parsed(message) => {
-                        if message
-                            .account_keys
-                            .into_iter()
-                            .map(|key| key.pubkey)
+                        let account_keys = message.account_keys;
+
+                        if account_keys
+                            .iter()
+                            .map(|key| key.pubkey.as_ref())
                             .collect_vec()
                             .contains(&vote_program_id)
                         {
-                            let header = BlockHeader {
+                            let mut header = BlockHeader {
                                 vote_signature: Some(inner_txn.signatures[0].to_owned()),
-                                validator_identity: todo!(),
-                                validator_sake: todo!(),
+                                validator_identity: None,
+                                validator_sake: None,
                             };
-                            let ixdata = message.instructions[0];
+                            let ixdata = &message.instructions[0];
 
                             match ixdata {
                                 solana_transaction_status::UiInstruction::Compiled(ixdata) => {
                                     let compiled_ix_data =
                                         solana_sdk::instruction::CompiledInstruction::new(
                                             ixdata.program_id_index,
-                                            &ixdata,
-                                            ixdata.accounts,
+                                            ixdata,
+                                            ixdata.accounts.clone(),
                                         );
-                                    let dynamic_keys: Vec<Pubkey> = message
-                                        .account_keys
-                                        .into_iter()
+                                    let dynamic_keys: Vec<Pubkey> = account_keys
+                                        .iter()
                                         .map(|k| Pubkey::from_str(k.pubkey.as_str()).unwrap())
                                         .collect();
                                     let ix = solana_transaction_status::parse_vote::parse_vote(
@@ -1220,6 +1219,21 @@ impl JsonRpcRequestProcessor {
                                         serde_json::from_value(ix.info).unwrap();
                                     header.validator_identity =
                                         Some(vote_state.authorized_withdrawer);
+
+                                    let node_balance_position = account_keys
+                                        .into_iter()
+                                        .position(|k| {
+                                            k.pubkey == vote_state.node_pubkey.to_string()
+                                        })
+                                        .unwrap();
+
+                                    let meta = outer_txn.meta.unwrap();
+                                    header.validator_sake = Some(
+                                        meta.pre_balances[node_balance_position]
+                                            - (meta.post_balances[node_balance_position]
+                                                + meta.fee),
+                                    );
+                                    headers.push(header);
                                 }
                                 _ => {}
                             }
@@ -1230,6 +1244,8 @@ impl JsonRpcRequestProcessor {
                 _ => {}
             };
         }
+
+        Ok(Some(headers))
     }
 
     pub async fn get_blocks(
@@ -3440,7 +3456,7 @@ pub mod rpc_full {
             meta: Self::Metadata,
             slot: Slot,
             config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
-        ) -> BoxFuture<Result<Vec<BlockHeader>>>;
+        ) -> BoxFuture<Result<Option<Vec<BlockHeader>>>>;
 
         #[rpc(meta, name = "getBlocksWithLimit")]
         fn get_blocks_with_limit(
