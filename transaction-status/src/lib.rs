@@ -832,6 +832,13 @@ pub struct EntrySummary {
     pub starting_transaction_index: usize,
 }
 
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Default)]
+pub struct BlockHeader {
+    pub vote_signature: Option<String>,
+    pub validator_identity: Option<Pubkey>,
+    pub validator_sake: Option<u64>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum TransactionWithStatusMeta {

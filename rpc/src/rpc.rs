@@ -1,4 +1,8 @@
 //! The `rpc` module implements the Solana RPC interface.
+
+use itertools::Itertools;
+use solana_sdk::message::AccountKeys;
+use solana_transaction_status::{BlockHeader, EncodedTransaction, UiParsedInstruction};
 use {
     crate::{
         max_slots::MaxSlots, optimistically_confirmed_bank_tracker::OptimisticallyConfirmedBank,
@@ -1164,6 +1168,68 @@ impl JsonRpcRequestProcessor {
             return Err(RpcCustomError::TransactionHistoryNotAvailable.into());
         }
         Err(RpcCustomError::BlockNotAvailable { slot }.into())
+    }
+
+    pub async fn get_headers(
+        &self,
+        blockhash: RpcBlockhash,
+        slot: Slot,
+        config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
+    ) {
+        let vote_program_id = "Vote111111111111111111111111111111111111111".to_string();
+        let block = self.get_block(slot, config).await;
+        let headers: Vec<BlockHeader> = Vec::new();
+
+        for outer_txn in block.unwrap().unwrap().transactions.unwrap() {
+            let block_header = match outer_txn.transaction {
+                EncodedTransaction::Json(inner_txn) => match inner_txn.message {
+                    solana_transaction_status::UiMessage::Parsed(message) => {
+                        if message
+                            .account_keys
+                            .into_iter()
+                            .map(|key| key.pubkey)
+                            .collect_vec()
+                            .contains(&vote_program_id)
+                        {
+                            let header = BlockHeader {
+                                vote_signature: Some(inner_txn.signatures[0].to_owned()),
+                                validator_identity: todo!(),
+                                validator_sake: todo!(),
+                            };
+                            let ixdata = message.instructions[0];
+
+                            match ixdata {
+                                solana_transaction_status::UiInstruction::Compiled(ixdata) => {
+                                    let compiled_ix_data =
+                                        solana_sdk::instruction::CompiledInstruction::new(
+                                            ixdata.program_id_index,
+                                            &ixdata,
+                                            ixdata.accounts,
+                                        );
+                                    let dynamic_keys: Vec<Pubkey> = message
+                                        .account_keys
+                                        .into_iter()
+                                        .map(|k| Pubkey::from_str(k.pubkey.as_str()).unwrap())
+                                        .collect();
+                                    let ix = solana_transaction_status::parse_vote::parse_vote(
+                                        &compiled_ix_data,
+                                        &AccountKeys::new(&dynamic_keys, None),
+                                    )
+                                    .unwrap();
+                                    let vote_state: VoteState =
+                                        serde_json::from_value(ix.info).unwrap();
+                                    header.validator_identity =
+                                        Some(vote_state.authorized_withdrawer);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                },
+                _ => {}
+            };
+        }
     }
 
     pub async fn get_blocks(
