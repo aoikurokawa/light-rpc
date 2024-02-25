@@ -1179,89 +1179,90 @@ impl JsonRpcRequestProcessor {
         let vote_program_id = "Vote111111111111111111111111111111111111111";
         let block = self.get_block(slot, config).await;
         let mut headers: Vec<BlockHeader> = Vec::new();
+        info!("block received {:?}", block);
 
-        for outer_txn in block.unwrap().unwrap().transactions.unwrap() {
-            match outer_txn.transaction {
-                EncodedTransaction::Json(inner_txn) => match inner_txn.message {
-                    solana_transaction_status::UiMessage::Parsed(message) => {
-                        let account_keys = message.account_keys;
+        // for outer_txn in block.unwrap().unwrap().transactions.unwrap() {
+        //     match outer_txn.transaction {
+        //         EncodedTransaction::Json(inner_txn) => match inner_txn.message {
+        //             solana_transaction_status::UiMessage::Parsed(message) => {
+        //                 let account_keys = message.account_keys;
 
-                        if account_keys
-                            .iter()
-                            .map(|key| key.pubkey.as_ref())
-                            .collect_vec()
-                            .contains(&vote_program_id)
-                        {
-                            let mut header = BlockHeader {
-                                vote_signature: Some(inner_txn.signatures[0].to_owned()),
-                                validator_identity: None,
-                                validator_stake: None,
-                            };
-                            let ixdata = &message.instructions[0];
+        //                 if account_keys
+        //                     .iter()
+        //                     .map(|key| key.pubkey.as_ref())
+        //                     .collect_vec()
+        //                     .contains(&vote_program_id)
+        //                 {
+        //                     let mut header = BlockHeader {
+        //                         vote_signature: Some(inner_txn.signatures[0].to_owned()),
+        //                         validator_identity: None,
+        //                         validator_stake: None,
+        //                     };
+        //                     let ixdata = &message.instructions[0];
 
-                            match ixdata {
-                                solana_transaction_status::UiInstruction::Compiled(ixdata) => {
-                                    let compiled_ix_data =
-                                        solana_sdk::instruction::CompiledInstruction::new(
-                                            ixdata.program_id_index,
-                                            ixdata,
-                                            ixdata.accounts.clone(),
-                                        );
-                                    let dynamic_keys: Vec<Pubkey> = account_keys
-                                        .iter()
-                                        .map(|k| Pubkey::from_str(k.pubkey.as_str()).unwrap())
-                                        .collect();
-                                    let ix = solana_transaction_status::parse_vote::parse_vote(
-                                        &compiled_ix_data,
-                                        &AccountKeys::new(&dynamic_keys, None),
-                                    )
-                                    .unwrap();
-                                    let vote_state: VoteState =
-                                        serde_json::from_value(ix.info).unwrap();
-                                    header.validator_identity =
-                                        Some(vote_state.authorized_withdrawer);
-                                    let stake_account = self.get_account_info(
-                                        &Pubkey::from_str(account_keys[1].pubkey.as_str())
-                                            .unwrap(),
-                                        None,
-                                    );
-                                    let stake_acc = stake_account.unwrap().value.unwrap().data;
-                                    match stake_acc {
-                                        UiAccountData::Json(stake_acc) => {
-                                            let parsed: UiStakeAccount =
-                                                serde_json::from_value(stake_acc.parsed).unwrap();
-                                            eprintln!(
-                                                "{:?}",
-                                                parsed.stake.unwrap().delegation.stake
-                                            );
-                                        }
-                                        _ => {}
-                                    }
+        //                     match ixdata {
+        //                         solana_transaction_status::UiInstruction::Compiled(ixdata) => {
+        //                             let compiled_ix_data =
+        //                                 solana_sdk::instruction::CompiledInstruction::new(
+        //                                     ixdata.program_id_index,
+        //                                     ixdata,
+        //                                     ixdata.accounts.clone(),
+        //                                 );
+        //                             let dynamic_keys: Vec<Pubkey> = account_keys
+        //                                 .iter()
+        //                                 .map(|k| Pubkey::from_str(k.pubkey.as_str()).unwrap())
+        //                                 .collect();
+        //                             let ix = solana_transaction_status::parse_vote::parse_vote(
+        //                                 &compiled_ix_data,
+        //                                 &AccountKeys::new(&dynamic_keys, None),
+        //                             )
+        //                             .unwrap();
+        //                             let vote_state: VoteState =
+        //                                 serde_json::from_value(ix.info).unwrap();
+        //                             header.validator_identity =
+        //                                 Some(vote_state.authorized_withdrawer);
+        //                             let stake_account = self.get_account_info(
+        //                                 &Pubkey::from_str(account_keys[1].pubkey.as_str())
+        //                                     .unwrap(),
+        //                                 None,
+        //                             );
+        //                             let stake_acc = stake_account.unwrap().value.unwrap().data;
+        //                             match stake_acc {
+        //                                 UiAccountData::Json(stake_acc) => {
+        //                                     let parsed: UiStakeAccount =
+        //                                         serde_json::from_value(stake_acc.parsed).unwrap();
+        //                                     eprintln!(
+        //                                         "{:?}",
+        //                                         parsed.stake.unwrap().delegation.stake
+        //                                     );
+        //                                 }
+        //                                 _ => {}
+        //                             }
 
-                                    let node_balance_position = account_keys
-                                        .into_iter()
-                                        .position(|k| {
-                                            k.pubkey == vote_state.node_pubkey.to_string()
-                                        })
-                                        .unwrap();
+        //                             let node_balance_position = account_keys
+        //                                 .into_iter()
+        //                                 .position(|k| {
+        //                                     k.pubkey == vote_state.node_pubkey.to_string()
+        //                                 })
+        //                                 .unwrap();
 
-                                    let meta = outer_txn.meta.unwrap();
-                                    header.validator_stake = Some(
-                                        meta.pre_balances[node_balance_position]
-                                            - (meta.post_balances[node_balance_position]
-                                                + meta.fee),
-                                    );
-                                    headers.push(header);
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                    _ => {}
-                },
-                _ => {}
-            };
-        }
+        //                             let meta = outer_txn.meta.unwrap();
+        //                             header.validator_stake = Some(
+        //                                 meta.pre_balances[node_balance_position]
+        //                                     - (meta.post_balances[node_balance_position]
+        //                                         + meta.fee),
+        //                             );
+        //                             headers.push(header);
+        //                         }
+        //                         _ => {}
+        //                     }
+        //                 }
+        //             }
+        //             _ => {}
+        //         },
+        //         _ => {}
+        //     };
+        // }
 
         Ok(Some(headers))
     }
