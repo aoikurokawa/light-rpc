@@ -1,8 +1,10 @@
 //! The `rpc` module implements the Solana RPC interface.
 
 use itertools::Itertools;
-use solana_account_decoder::{parse_stake::UiStakeAccount, UiAccountData};
-use solana_sdk::message::AccountKeys;
+use solana_account_decoder::{
+    parse_stake::{StakeAccountType, UiStakeAccount},
+    UiAccountData,
+};
 use solana_transaction_status::{BlockHeader, EncodedTransaction};
 use {
     crate::{
@@ -1175,98 +1177,169 @@ impl JsonRpcRequestProcessor {
         &self,
         slot: Slot,
         config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
-    ) -> Result<Option<Vec<BlockHeader>>> {
+    ) -> Result<Option<BlockHeader>> {
         let vote_program_id = "Vote111111111111111111111111111111111111111";
-        let block = self.get_block(slot, config).await;
-        let mut headers: Vec<BlockHeader> = Vec::new();
+        let mut block_headers = BlockHeader::default();
 
-        for outer_txn in block.unwrap().unwrap().transactions.unwrap() {
-            match outer_txn.transaction {
-                EncodedTransaction::Json(inner_txn) => match inner_txn.message {
-                    solana_transaction_status::UiMessage::Parsed(message) => {
-                        let account_keys = message.account_keys;
+        if let Some(block) = self.get_block(slot, config).await? {
+            eprintln!("Block: {:?}", block);
 
-                        if account_keys
-                            .iter()
-                            .map(|key| key.pubkey.as_ref())
-                            .collect_vec()
-                            .contains(&vote_program_id)
-                        {
-                            let mut vote_signature = Vec::new();
-                            let mut validator_identity = Vec::new();
-                            let mut validator_stake = Vec::new();
+            if let Some(transactions) = block.transactions {
+                for outer_txn in transactions {
+                    match outer_txn.transaction {
+                        EncodedTransaction::Json(inner_txn) => match inner_txn.message {
+                            solana_transaction_status::UiMessage::Parsed(message) => {
+                                let account_keys = message.account_keys;
 
-                            let ixdata = &message.instructions[0];
+                                if account_keys
+                                    .iter()
+                                    .map(|key| key.pubkey.as_ref())
+                                    .collect_vec()
+                                    .contains(&vote_program_id)
+                                {
+                                    // let mut validator_identity = None;
+                                    let mut validator_stake = None;
 
-                            match ixdata {
-                                solana_transaction_status::UiInstruction::Parsed(ixc) => {
-                                    // let compiled_ix_data =
-                                    //     solana_sdk::instruction::CompiledInstruction::new(
-                                    //         ixdata.program_id_index,
-                                    //         ixdata,
-                                    //         ixdata.accounts.clone(),
-                                    //     );
-                                    let static_keys: Vec<Pubkey> = account_keys
-                                        .iter()
-                                        .map(|k| Pubkey::from_str(&k.pubkey.as_str()).unwrap())
-                                        .collect();
-                                    // let dynamic_keys: Vec<Pubkey> = account_keys
-                                    //     .iter()
-                                    //     .map(|k| Pubkey::from_str(k.pubkey.as_str()).unwrap())
-                                    //     .collect();
-                                    let acc_keys = AccountKeys::new(&static_keys, None);
-                                    // let ix = solana_transaction_status::parse_vote::parse_vote(
-                                    //     &compiled_ix_data,
-                                    //     &
-                                    // )
-                                    // .unwrap();
-                                    // let vote_state: VoteState =
-                                    //     serde_json::from_value(ix.info).unwrap();
-                                    // header.validator_identity =
-                                    //     Some(vote_state.authorized_withdrawer);
-                                    // let stake_account = self.get_account_info(
-                                    //     &Pubkey::from_str(account_keys[1].pubkey.as_str()).unwrap(),
-                                    //     None,
-                                    // );
-                                    let stake_acc = stake_account.unwrap().value.unwrap().data;
-                                    match stake_acc {
-                                        UiAccountData::Json(stake_acc) => {
-                                            let parsed: UiStakeAccount =
-                                                serde_json::from_value(stake_acc.parsed).unwrap();
-                                            eprintln!(
-                                                "{:?}",
-                                                parsed.stake.unwrap().delegation.stake
+                                    let ixdata = &message.instructions[0];
+
+                                    match ixdata {
+                                        solana_transaction_status::UiInstruction::Parsed(_ixc) => {
+                                            // let compiled_ix_data =
+                                            //     solana_sdk::instruction::CompiledInstruction::new(
+                                            //         ixdata.program_id_index,
+                                            //         ixdata,
+                                            //         ixdata.accounts.clone(),
+                                            //     );
+                                            let _static_keys: Vec<Pubkey> = account_keys
+                                                .iter()
+                                                .map(|k| {
+                                                    Pubkey::from_str(&k.pubkey.as_str()).unwrap()
+                                                })
+                                                .collect();
+                                            // let dynamic_keys: Vec<Pubkey> = account_keys
+                                            //     .iter()
+                                            //     .map(|k| Pubkey::from_str(k.pubkey.as_str()).unwrap())
+                                            //     .collect();
+                                            // let acc_keys = AccountKeys::new(&static_keys, None);
+                                            // let ix = solana_transaction_status::parse_vote::parse_vote(
+                                            //     &compiled_ix_data,
+                                            //     &
+                                            // )
+                                            // .unwrap();
+                                            // let vote_state: VoteState =
+                                            //     serde_json::from_value(ix.info).unwrap();
+                                            // header.validator_identity =
+                                            //     Some(vote_state.authorized_withdrawer);
+                                            let validator_identity =
+                                                Some(account_keys.get(0).unwrap());
+                                            let config = Some(RpcAccountInfoConfig {
+                                                encoding: Some(UiAccountEncoding::JsonParsed),
+                                                data_slice: None,
+                                                commitment: None,
+                                                min_context_slot: Some(1),
+                                            });
+                                            let stake_account = self.get_account_info(
+                                                &Pubkey::from_str(account_keys[1].pubkey.as_str())
+                                                    .unwrap(),
+                                                config.clone(),
                                             );
+                                            let stake_acc =
+                                                stake_account.unwrap().value.unwrap().data;
+                                            let stakes = self
+                                        .get_program_accounts(
+                                            &Pubkey::from_str(
+                                                "Stake11111111111111111111111111111111111111",
+                                            )
+                                            .unwrap(),
+                                            config,
+                                            vec![],
+                                            false,
+                                        )
+                                        .unwrap();
+
+                                            if let OptionalContext::NoContext(stks) = stakes {
+                                                for stk in stks {
+                                                    if let UiAccountData::Json(stka) =
+                                                        stk.account.data
+                                                    {
+                                                        let p: solana_account_decoder::parse_stake::StakeAccountType = serde_json::from_value(stka.parsed).unwrap();
+                                                        match p {
+                                                            StakeAccountType::Delegated(dps) => {
+                                                                validator_stake = Some(
+                                                                    dps.stake
+                                                                        .unwrap()
+                                                                        .delegation
+                                                                        .stake
+                                                                        .parse()
+                                                                        .unwrap(),
+                                                                )
+                                                            }
+                                                            StakeAccountType::Initialized(_ips) => {
+                                                            }
+                                                            _ => {}
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            match stake_acc {
+                                                UiAccountData::Json(stake_acc) => {
+                                                    let parsed: UiStakeAccount =
+                                                        serde_json::from_value(stake_acc.parsed)
+                                                            .unwrap();
+                                                    // eprintln!(
+                                                    //     "{:?}",
+                                                    //     parsed.stake.unwrap().delegation.stake
+                                                    // );
+                                                    validator_stake = Some(
+                                                        parsed
+                                                            .stake
+                                                            .unwrap()
+                                                            .delegation
+                                                            .stake
+                                                            .parse()
+                                                            .unwrap(),
+                                                    );
+                                                }
+                                                _ => {}
+                                            }
+
+                                            // let node_balance_position = account_keys
+                                            //     .into_iter()
+                                            //     .position(|k| {
+                                            //         k.pubkey == vote_state.node_pubkey.to_string()
+                                            //     })
+                                            //     .unwrap();
+
+                                            // let meta = outer_txn.meta.unwrap();
+                                            block_headers.validator_identity.push(Some(
+                                                Pubkey::from_str(
+                                                    &validator_identity.unwrap().pubkey,
+                                                )
+                                                .unwrap(),
+                                            ));
+                                            block_headers.validator_stake.push(validator_stake);
+                                            if let Some(vote_signature) =
+                                                inner_txn.signatures.get(0)
+                                            {
+                                                block_headers
+                                                    .vote_signature
+                                                    .push(Some(vote_signature.to_owned()));
+                                            }
                                         }
                                         _ => {}
                                     }
-
-                                    let node_balance_position = account_keys
-                                        .into_iter()
-                                        .position(|k| {
-                                            k.pubkey == vote_state.node_pubkey.to_string()
-                                        })
-                                        .unwrap();
-
-                                    let meta = outer_txn.meta.unwrap();
-                                    header.validator_stake = Some(
-                                        meta.pre_balances[node_balance_position]
-                                            - (meta.post_balances[node_balance_position]
-                                                + meta.fee),
-                                    );
-                                    headers.push(header);
                                 }
-                                _ => {}
                             }
-                        }
-                    }
-                    _ => {}
-                },
-                _ => {}
-            };
+                            _ => {}
+                        },
+                        _ => {}
+                    };
+                }
+            }
         }
 
-        Ok(Some(headers))
+        Ok(Some(block_headers))
     }
 
     pub async fn get_blocks(
@@ -3477,7 +3550,7 @@ pub mod rpc_full {
             meta: Self::Metadata,
             slot: Slot,
             config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
-        ) -> BoxFuture<Result<Option<Vec<BlockHeader>>>>;
+        ) -> BoxFuture<Result<Option<BlockHeader>>>;
 
         #[rpc(meta, name = "getBlocksWithLimit")]
         fn get_blocks_with_limit(
@@ -3978,7 +4051,7 @@ pub mod rpc_full {
             meta: Self::Metadata,
             slot: Slot,
             config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
-        ) -> BoxFuture<Result<Option<Vec<BlockHeader>>>> {
+        ) -> BoxFuture<Result<Option<BlockHeader>>> {
             debug!("get_block rpc request received: {:?}", slot);
             Box::pin(async move { meta.get_block_headers(slot, config).await })
         }
