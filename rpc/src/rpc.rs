@@ -1,5 +1,4 @@
 //! The `rpc` module implements the Solana RPC interface.
-
 use itertools::Itertools;
 use solana_account_decoder::{
     parse_stake::{StakeAccountType, UiStakeAccount},

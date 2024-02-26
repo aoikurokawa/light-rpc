@@ -1137,7 +1137,6 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> AccountsIndex<T, U> {
 
     /// Gets the index's entry for `pubkey`, with `ancestors` and `max_root`,
     /// and applies `callback` to it
-    #[cfg(test)]
     pub(crate) fn get_with_and_then<R>(
         &self,
         pubkey: &Pubkey,
@@ -2167,18 +2166,6 @@ pub mod tests {
                 }
                 PreAllocatedAccountMapEntry::Raw(raw) => PreAllocatedAccountMapEntry::Raw(*raw),
             }
-        }
-    }
-
-    impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> AccountsIndex<T, U> {
-        /// provides the ability to refactor this function on the api without bloody changes
-        pub fn get_for_tests(
-            &self,
-            pubkey: &Pubkey,
-            ancestors: Option<&Ancestors>,
-            max_root: Option<Slot>,
-        ) -> AccountIndexGetResult<T> {
-            self.get(pubkey, ancestors, max_root)
         }
     }
 
