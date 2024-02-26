@@ -1182,7 +1182,7 @@ impl JsonRpcRequestProcessor {
         let mut block_headers = BlockHeader::default();
 
         if let Some(block) = self.get_block(slot, config).await? {
-            eprintln!("Block: {:?}", block);
+            info!("Block: {:?}", block);
 
             if let Some(transactions) = block.transactions {
                 for outer_txn in transactions {
