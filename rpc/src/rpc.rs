@@ -1198,7 +1198,7 @@ impl JsonRpcRequestProcessor {
                                 {
                                     let validator_identity = account_keys.get(0).unwrap();
                                     let mut validator_stake = None;
-                                    let compiled_ix = &raw_message.instructions[0];
+                                    let _compiled_ix = &raw_message.instructions[0];
 
                                     let _static_keys: Vec<Pubkey> = account_keys
                                         .iter()
@@ -1299,32 +1299,12 @@ impl JsonRpcRequestProcessor {
 
                                     match ixdata {
                                         solana_transaction_status::UiInstruction::Parsed(_ixc) => {
-                                            // let compiled_ix_data =
-                                            //     solana_sdk::instruction::CompiledInstruction::new(
-                                            //         ixdata.program_id_index,
-                                            //         ixdata,
-                                            //         ixdata.accounts.clone(),
-                                            //     );
                                             let _static_keys: Vec<Pubkey> = account_keys
                                                 .iter()
                                                 .map(|k| {
                                                     Pubkey::from_str(&k.pubkey.as_str()).unwrap()
                                                 })
                                                 .collect();
-                                            // let dynamic_keys: Vec<Pubkey> = account_keys
-                                            //     .iter()
-                                            //     .map(|k| Pubkey::from_str(k.pubkey.as_str()).unwrap())
-                                            //     .collect();
-                                            // let acc_keys = AccountKeys::new(&static_keys, None);
-                                            // let ix = solana_transaction_status::parse_vote::parse_vote(
-                                            //     &compiled_ix_data,
-                                            //     &
-                                            // )
-                                            // .unwrap();
-                                            // let vote_state: VoteState =
-                                            //     serde_json::from_value(ix.info).unwrap();
-                                            // header.validator_identity =
-                                            //     Some(vote_state.authorized_withdrawer);
                                             let validator_identity =
                                                 Some(account_keys.get(0).unwrap());
                                             let config = Some(RpcAccountInfoConfig {
@@ -1395,14 +1375,6 @@ impl JsonRpcRequestProcessor {
                                                 _ => {}
                                             }
 
-                                            // let node_balance_position = account_keys
-                                            //     .into_iter()
-                                            //     .position(|k| {
-                                            //         k.pubkey == vote_state.node_pubkey.to_string()
-                                            //     })
-                                            //     .unwrap();
-
-                                            // let meta = outer_txn.meta.unwrap();
                                             block_headers.validator_identity.push(Some(
                                                 Pubkey::from_str(
                                                     &validator_identity.unwrap().pubkey,
