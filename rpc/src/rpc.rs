@@ -1186,9 +1186,111 @@ impl JsonRpcRequestProcessor {
             if let Some(transactions) = block.transactions {
                 for outer_txn in transactions {
                     match outer_txn.transaction {
-                        EncodedTransaction::Json(inner_txn) => match inner_txn.message {
-                            solana_transaction_status::UiMessage::Parsed(message) => {
-                                let account_keys = message.account_keys;
+                        EncodedTransaction::Json(ui_txn) => match ui_txn.message {
+                            solana_transaction_status::UiMessage::Raw(raw_message) => {
+                                let account_keys = raw_message.account_keys;
+
+                                if account_keys
+                                    .iter()
+                                    .map(|key| key.as_str())
+                                    .collect_vec()
+                                    .contains(&vote_program_id)
+                                {
+                                    let mut validator_stake = None;
+                                    let _compiled_ix = &raw_message.instructions[0];
+
+                                    let _static_keys: Vec<Pubkey> = account_keys
+                                        .iter()
+                                        .map(|k| Pubkey::from_str(k.as_str()).unwrap())
+                                        .collect();
+                                    // let dynamic_keys: Vec<Pubkey> = account_keys
+                                    //     .iter()
+                                    //     .map(|k| Pubkey::from_str(k.pubkey.as_str()).unwrap())
+                                    //     .collect();
+                                    // let acc_keys = AccountKeys::new(&static_keys, None);
+                                    // let ix = solana_transaction_status::parse_vote::parse_vote(
+                                    //     &compiled_ix_data,
+                                    //     &
+                                    // )
+                                    // .unwrap();
+                                    // let vote_state: VoteState =
+                                    //     serde_json::from_value(ix.info).unwrap();
+                                    // header.validator_identity =
+                                    //     Some(vote_state.authorized_withdrawer);
+                                    let validator_identity = account_keys.get(0).unwrap();
+                                    let config = Some(RpcAccountInfoConfig {
+                                        encoding: Some(UiAccountEncoding::JsonParsed),
+                                        data_slice: None,
+                                        commitment: None,
+                                        min_context_slot: Some(1),
+                                    });
+                                    let stakes = self.get_program_accounts(
+                                        &Pubkey::from_str(
+                                            "Stake11111111111111111111111111111111111111",
+                                        )
+                                        .unwrap(),
+                                        config.clone(),
+                                        vec![],
+                                        false,
+                                    )?;
+
+                                    if let OptionalContext::NoContext(stks) = stakes {
+                                        for stk in stks {
+                                            if let UiAccountData::Json(stka) = stk.account.data {
+                                                let p: solana_account_decoder::parse_stake::StakeAccountType = serde_json::from_value(stka.parsed).unwrap();
+                                                match p {
+                                                    StakeAccountType::Delegated(dps) => {
+                                                        validator_stake = Some(
+                                                            dps.stake
+                                                                .unwrap()
+                                                                .delegation
+                                                                .stake
+                                                                .parse()
+                                                                .unwrap(),
+                                                        )
+                                                    }
+                                                    StakeAccountType::Initialized(_ips) => {}
+                                                    _ => {}
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    let stake_account = self.get_account_info(
+                                        &Pubkey::from_str(account_keys[1].as_str()).unwrap(),
+                                        config.clone(),
+                                    )?;
+                                    let stake_acc = stake_account.value.unwrap().data;
+                                    match stake_acc {
+                                        UiAccountData::Json(parsed_acc) => {
+                                            let parsed: UiStakeAccount =
+                                                serde_json::from_value(parsed_acc.parsed).unwrap();
+                                            validator_stake = Some(
+                                                parsed
+                                                    .stake
+                                                    .unwrap()
+                                                    .delegation
+                                                    .stake
+                                                    .parse()
+                                                    .unwrap(),
+                                            );
+                                        }
+                                        _ => {}
+                                    }
+
+                                    block_headers.validator_identity.push(Some(
+                                        Pubkey::from_str(validator_identity.as_str()).unwrap(),
+                                    ));
+                                    block_headers.validator_stake.push(validator_stake);
+                                    if let Some(vote_signature) = ui_txn.signatures.get(0) {
+                                        block_headers
+                                            .vote_signature
+                                            .push(Some(vote_signature.to_owned()));
+                                    }
+                                }
+                            }
+                            solana_transaction_status::UiMessage::Parsed(parsed_message) => {
+                                let account_keys = parsed_message.account_keys;
 
                                 if account_keys
                                     .iter()
@@ -1199,7 +1301,7 @@ impl JsonRpcRequestProcessor {
                                     // let mut validator_identity = None;
                                     let mut validator_stake = None;
 
-                                    let ixdata = &message.instructions[0];
+                                    let ixdata = &parsed_message.instructions[0];
 
                                     match ixdata {
                                         solana_transaction_status::UiInstruction::Parsed(_ixc) => {
@@ -1286,10 +1388,6 @@ impl JsonRpcRequestProcessor {
                                                     let parsed: UiStakeAccount =
                                                         serde_json::from_value(stake_acc.parsed)
                                                             .unwrap();
-                                                    // eprintln!(
-                                                    //     "{:?}",
-                                                    //     parsed.stake.unwrap().delegation.stake
-                                                    // );
                                                     validator_stake = Some(
                                                         parsed
                                                             .stake
@@ -1318,9 +1416,7 @@ impl JsonRpcRequestProcessor {
                                                 .unwrap(),
                                             ));
                                             block_headers.validator_stake.push(validator_stake);
-                                            if let Some(vote_signature) =
-                                                inner_txn.signatures.get(0)
-                                            {
+                                            if let Some(vote_signature) = ui_txn.signatures.get(0) {
                                                 block_headers
                                                     .vote_signature
                                                     .push(Some(vote_signature.to_owned()));
@@ -1330,7 +1426,6 @@ impl JsonRpcRequestProcessor {
                                     }
                                 }
                             }
-                            _ => {}
                         },
                         _ => {}
                     };
