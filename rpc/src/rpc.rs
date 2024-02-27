@@ -4,7 +4,7 @@ use solana_account_decoder::{
     parse_stake::{StakeAccountType, UiStakeAccount},
     UiAccountData,
 };
-use solana_transaction_status::{BlockHeader, EncodedTransaction};
+use solana_transaction_status::{BlockHeader, EncodedTransaction, UiInstruction};
 use {
     crate::{
         max_slots::MaxSlots, optimistically_confirmed_bank_tracker::OptimisticallyConfirmedBank,
@@ -1196,28 +1196,14 @@ impl JsonRpcRequestProcessor {
                                     .collect_vec()
                                     .contains(&vote_program_id)
                                 {
+                                    let validator_identity = account_keys.get(0).unwrap();
                                     let mut validator_stake = None;
-                                    let _compiled_ix = &raw_message.instructions[0];
+                                    let compiled_ix = &raw_message.instructions[0];
 
                                     let _static_keys: Vec<Pubkey> = account_keys
                                         .iter()
                                         .map(|k| Pubkey::from_str(k.as_str()).unwrap())
                                         .collect();
-                                    // let dynamic_keys: Vec<Pubkey> = account_keys
-                                    //     .iter()
-                                    //     .map(|k| Pubkey::from_str(k.pubkey.as_str()).unwrap())
-                                    //     .collect();
-                                    // let acc_keys = AccountKeys::new(&static_keys, None);
-                                    // let ix = solana_transaction_status::parse_vote::parse_vote(
-                                    //     &compiled_ix_data,
-                                    //     &
-                                    // )
-                                    // .unwrap();
-                                    // let vote_state: VoteState =
-                                    //     serde_json::from_value(ix.info).unwrap();
-                                    // header.validator_identity =
-                                    //     Some(vote_state.authorized_withdrawer);
-                                    let validator_identity = account_keys.get(0).unwrap();
                                     let config = Some(RpcAccountInfoConfig {
                                         encoding: Some(UiAccountEncoding::JsonParsed),
                                         data_slice: None,
@@ -1256,26 +1242,34 @@ impl JsonRpcRequestProcessor {
                                         }
                                     }
 
-                                    let stake_account = self.get_account_info(
-                                        &Pubkey::from_str(account_keys[1].as_str()).unwrap(),
-                                        config.clone(),
-                                    )?;
-                                    let stake_acc = stake_account.value.unwrap().data;
-                                    match stake_acc {
-                                        UiAccountData::Json(parsed_acc) => {
-                                            let parsed: UiStakeAccount =
-                                                serde_json::from_value(parsed_acc.parsed).unwrap();
-                                            validator_stake = Some(
-                                                parsed
-                                                    .stake
-                                                    .unwrap()
-                                                    .delegation
-                                                    .stake
-                                                    .parse()
-                                                    .unwrap(),
-                                            );
+                                    let stake_accounts = account_keys.iter().map(|key| {
+                                        self.get_account_info(
+                                            &Pubkey::from_str(key.as_str()).unwrap(),
+                                            config.clone(),
+                                        )
+                                    });
+                                    for stake_account in stake_accounts {
+                                        let stake_acc = stake_account?.value.unwrap().data;
+                                        match stake_acc {
+                                            UiAccountData::Json(parsed_acc) => {
+                                                if let Ok(parsed) =
+                                                    serde_json::from_value::<UiStakeAccount>(
+                                                        parsed_acc.parsed,
+                                                    )
+                                                {
+                                                    validator_stake = Some(
+                                                        parsed
+                                                            .stake
+                                                            .unwrap()
+                                                            .delegation
+                                                            .stake
+                                                            .parse()
+                                                            .unwrap(),
+                                                    );
+                                                }
+                                            }
+                                            _ => {}
                                         }
-                                        _ => {}
                                     }
 
                                     block_headers.validator_identity.push(Some(
