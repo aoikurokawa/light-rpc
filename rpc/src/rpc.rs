@@ -4,7 +4,8 @@ use solana_account_decoder::{
     parse_stake::{StakeAccountType, UiStakeAccount},
     UiAccountData,
 };
-use solana_transaction_status::{BlockHeader, EncodedTransaction, UiInstruction};
+use solana_ledger::shred::Shred;
+use solana_transaction_status::{BlockHeader, EncodedTransaction};
 use {
     crate::{
         max_slots::MaxSlots, optimistically_confirmed_bank_tracker::OptimisticallyConfirmedBank,
@@ -1181,8 +1182,6 @@ impl JsonRpcRequestProcessor {
         let mut block_headers = BlockHeader::default();
 
         if let Some(block) = self.get_block(slot, config).await? {
-            info!("Block: {:?}", block);
-
             if let Some(transactions) = block.transactions {
                 for outer_txn in transactions {
                     match outer_txn.transaction {
@@ -1400,6 +1399,50 @@ impl JsonRpcRequestProcessor {
         }
 
         Ok(Some(block_headers))
+    }
+
+    pub async fn get_shreds(
+        &self,
+        slot: Slot,
+        shred_indices: Vec<u64>,
+        _config: Option<RpcShredConfig>,
+    ) -> Result<Vec<Option<Shred>>> {
+        let shreds: Vec<[Option<Shred>; 2]> = shred_indices
+            .iter()
+            .map(|index| {
+                let ds = if let Ok(shred) = self.blockstore.get_data_shred(slot, *index) {
+                    if let Some(shred_data) = shred {
+                        if let Ok(serialized_shred) = Shred::new_from_serialized_shred(shred_data) {
+                            Some(serialized_shred)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                let cs = if let Ok(shred) = self.blockstore.get_coding_shred(slot, *index) {
+                    if let Some(shred_data) = shred {
+                        if let Ok(serialized_shred) = Shred::new_from_serialized_shred(shred_data) {
+                            Some(serialized_shred)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                [ds, cs]
+            })
+            .collect();
+
+        let shreds = shreds.into_iter().flatten().collect();
+        Ok(shreds)
     }
 
     pub async fn get_blocks(
@@ -3615,6 +3658,15 @@ pub mod rpc_full {
             config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
         ) -> BoxFuture<Result<Option<BlockHeader>>>;
 
+        #[rpc(meta, name = "getShreds")]
+        fn get_shreds(
+            &self,
+            meta: Self::Metadata,
+            slot: Slot,
+            shred_indices: Vec<u64>,
+            config: Option<RpcShredConfig>,
+        ) -> BoxFuture<Result<Vec<Option<Shred>>>>;
+
         #[rpc(meta, name = "getBlocksWithLimit")]
         fn get_blocks_with_limit(
             &self,
@@ -4115,8 +4167,19 @@ pub mod rpc_full {
             slot: Slot,
             config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
         ) -> BoxFuture<Result<Option<BlockHeader>>> {
-            debug!("get_block rpc request received: {:?}", slot);
+            debug!("get_block_headers rpc request received: {:?}", slot);
             Box::pin(async move { meta.get_block_headers(slot, config).await })
+        }
+
+        fn get_shreds(
+            &self,
+            meta: Self::Metadata,
+            slot: Slot,
+            shred_indices: Vec<u64>,
+            config: Option<RpcShredConfig>,
+        ) -> BoxFuture<Result<Vec<Option<Shred>>>> {
+            debug!("get_shreds rpc request received: {:?}", slot);
+            Box::pin(async move { meta.get_shreds(slot, shred_indices, config).await })
         }
 
         fn get_blocks(
