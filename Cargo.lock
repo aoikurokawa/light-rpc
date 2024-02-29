@@ -6866,6 +6866,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "solana-account-decoder",
+ "solana-ledger",
  "solana-sdk",
  "solana-transaction-status",
  "solana-version",
