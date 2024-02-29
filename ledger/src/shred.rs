@@ -253,7 +253,7 @@ impl<'a> AsRef<[u8]> for SignedData<'a> {
 }
 
 /// Tuple which uniquely identifies a shred should it exists.
-#[derive(Clone, Copy, Eq, Debug, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Debug, Hash, PartialEq, Serialize, Deserialize)]
 pub struct ShredId(Slot, /*shred index:*/ u32, ShredType);
 
 impl ShredId {

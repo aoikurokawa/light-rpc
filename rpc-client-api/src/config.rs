@@ -259,6 +259,7 @@ pub trait EncodingConfig {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RpcShredConfig {
+    #[serde(flatten)]
     pub commitment: Option<CommitmentConfig>,
 }
 
