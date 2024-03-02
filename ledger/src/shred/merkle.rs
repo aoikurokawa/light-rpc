@@ -55,6 +55,7 @@ type MerkleProofEntry = [u8; 20];
 // Layout: {common, data} headers | data buffer
 //     | [Merkle root of the previous erasure batch if chained]
 //     | Merkle proof
+//     | [Retransmitter's signature if resigned]
 // The slice past signature till the end of the data buffer is erasure coded.
 // The slice past signature and before the merkle proof is hashed to generate
 // the Merkle tree. The root of the Merkle tree is signed.
@@ -68,6 +69,7 @@ pub struct ShredData {
 // Layout: {common, coding} headers | erasure coded shard
 //     | [Merkle root of the previous erasure batch if chained]
 //     | Merkle proof
+//     | [Retransmitter's signature if resigned]
 // The slice past signature and before the merkle proof is hashed to generate
 // the Merkle tree. The root of the Merkle tree is signed.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -147,15 +149,17 @@ impl ShredData {
 
     // Maximum size of ledger data that can be embedded in a data-shred.
     // Also equal to:
-    //   ShredCode::capacity(proof_size).unwrap()
+    //   ShredCode::capacity(proof_size, chained, resigned).unwrap()
     //       - ShredData::SIZE_OF_HEADERS
     //       + SIZE_OF_SIGNATURE
-    pub(super) fn capacity(proof_size: u8, chained: bool) -> Result<usize, Error> {
+    pub(super) fn capacity(proof_size: u8, chained: bool, resigned: bool) -> Result<usize, Error> {
+        debug_assert!(chained || !resigned);
         Self::SIZE_OF_PAYLOAD
             .checked_sub(
                 Self::SIZE_OF_HEADERS
                     + if chained { SIZE_OF_MERKLE_ROOT } else { 0 }
-                    + usize::from(proof_size) * SIZE_OF_MERKLE_PROOF_ENTRY,
+                    + usize::from(proof_size) * SIZE_OF_MERKLE_PROOF_ENTRY
+                    + if resigned { SIZE_OF_SIGNATURE } else { 0 },
             )
             .ok_or(Error::InvalidProofSize(proof_size))
     }
@@ -165,16 +169,17 @@ impl ShredData {
         let ShredVariant::MerkleData {
             proof_size,
             chained,
+            resigned,
         } = self.common_header.shred_variant
         else {
             return Err(Error::InvalidShredVariant);
         };
-        Self::get_proof_offset(proof_size, chained)
+        Self::get_proof_offset(proof_size, chained, resigned)
     }
 
-    fn get_proof_offset(proof_size: u8, chained: bool) -> Result<usize, Error> {
+    fn get_proof_offset(proof_size: u8, chained: bool, resigned: bool) -> Result<usize, Error> {
         Ok(Self::SIZE_OF_HEADERS
-            + Self::capacity(proof_size, chained)?
+            + Self::capacity(proof_size, chained, resigned)?
             + if chained { SIZE_OF_MERKLE_ROOT } else { 0 })
     }
 
@@ -182,11 +187,12 @@ impl ShredData {
         let ShredVariant::MerkleData {
             proof_size,
             chained: true,
+            resigned,
         } = self.common_header.shred_variant
         else {
             return Err(Error::InvalidShredVariant);
         };
-        Ok(Self::SIZE_OF_HEADERS + Self::capacity(proof_size, /*chained:*/ true)?)
+        Ok(Self::SIZE_OF_HEADERS + Self::capacity(proof_size, /*chained:*/ true, resigned)?)
     }
 
     fn set_chained_merkle_root(&mut self, chained_merkle_root: &Hash) -> Result<(), Error> {
@@ -236,11 +242,12 @@ impl ShredData {
         let ShredVariant::MerkleData {
             proof_size,
             chained,
+            resigned,
         } = common_header.shred_variant
         else {
             return Err(Error::InvalidShredVariant);
         };
-        if ShredCode::capacity(proof_size, chained)? != shard_size {
+        if ShredCode::capacity(proof_size, chained, resigned)? != shard_size {
             return Err(Error::InvalidShardSize(shard_size));
         }
         let data_header = deserialize_from_with_limit(&mut cursor)?;
@@ -273,12 +280,18 @@ impl ShredData {
         Ok(())
     }
 
-    pub(super) fn get_merkle_root(shred: &[u8], proof_size: u8, chained: bool) -> Option<Hash> {
+    pub(super) fn get_merkle_root(
+        shred: &[u8],
+        proof_size: u8,
+        chained: bool,
+        resigned: bool,
+    ) -> Option<Hash> {
         debug_assert_eq!(
             shred::layout::get_shred_variant(shred).unwrap(),
             ShredVariant::MerkleData {
                 proof_size,
                 chained,
+                resigned,
             },
         );
         // Shred index in the erasure batch.
@@ -291,7 +304,7 @@ impl ShredData {
                 .map(usize::try_from)?
                 .ok()?
         };
-        let proof_offset = Self::get_proof_offset(proof_size, chained).ok()?;
+        let proof_offset = Self::get_proof_offset(proof_size, chained, resigned).ok()?;
         let proof = get_merkle_proof(shred, proof_offset, proof_size).ok()?;
         let node = get_merkle_node(shred, SIZE_OF_SIGNATURE..proof_offset).ok()?;
         get_merkle_root(index, node, proof).ok()
@@ -308,14 +321,16 @@ impl ShredCode {
     }
 
     // Size of buffer embedding erasure codes.
-    fn capacity(proof_size: u8, chained: bool) -> Result<usize, Error> {
+    fn capacity(proof_size: u8, chained: bool, resigned: bool) -> Result<usize, Error> {
+        debug_assert!(chained || !resigned);
         // Merkle proof is generated and signed after coding shreds are
         // generated. Coding shred headers cannot be erasure coded either.
         Self::SIZE_OF_PAYLOAD
             .checked_sub(
                 Self::SIZE_OF_HEADERS
                     + if chained { SIZE_OF_MERKLE_ROOT } else { 0 }
-                    + usize::from(proof_size) * SIZE_OF_MERKLE_PROOF_ENTRY,
+                    + usize::from(proof_size) * SIZE_OF_MERKLE_PROOF_ENTRY
+                    + if resigned { SIZE_OF_SIGNATURE } else { 0 },
             )
             .ok_or(Error::InvalidProofSize(proof_size))
     }
@@ -325,16 +340,17 @@ impl ShredCode {
         let ShredVariant::MerkleCode {
             proof_size,
             chained,
+            resigned,
         } = self.common_header.shred_variant
         else {
             return Err(Error::InvalidShredVariant);
         };
-        Self::get_proof_offset(proof_size, chained)
+        Self::get_proof_offset(proof_size, chained, resigned)
     }
 
-    fn get_proof_offset(proof_size: u8, chained: bool) -> Result<usize, Error> {
+    fn get_proof_offset(proof_size: u8, chained: bool, resigned: bool) -> Result<usize, Error> {
         Ok(Self::SIZE_OF_HEADERS
-            + Self::capacity(proof_size, chained)?
+            + Self::capacity(proof_size, chained, resigned)?
             + if chained { SIZE_OF_MERKLE_ROOT } else { 0 })
     }
 
@@ -342,11 +358,12 @@ impl ShredCode {
         let ShredVariant::MerkleCode {
             proof_size,
             chained: true,
+            resigned,
         } = self.common_header.shred_variant
         else {
             return Err(Error::InvalidShredVariant);
         };
-        Ok(Self::SIZE_OF_HEADERS + Self::capacity(proof_size, /*chained:*/ true)?)
+        Ok(Self::SIZE_OF_HEADERS + Self::capacity(proof_size, /*chained:*/ true, resigned)?)
     }
 
     fn chained_merkle_root(&self) -> Result<Hash, Error> {
@@ -395,12 +412,13 @@ impl ShredCode {
         let ShredVariant::MerkleCode {
             proof_size,
             chained,
+            resigned,
         } = common_header.shred_variant
         else {
             return Err(Error::InvalidShredVariant);
         };
         let shard_size = shard.len();
-        if Self::capacity(proof_size, chained)? != shard_size {
+        if Self::capacity(proof_size, chained, resigned)? != shard_size {
             return Err(Error::InvalidShardSize(shard_size));
         }
         if shard_size + Self::SIZE_OF_HEADERS > Self::SIZE_OF_PAYLOAD {
@@ -440,12 +458,18 @@ impl ShredCode {
         Ok(())
     }
 
-    pub(super) fn get_merkle_root(shred: &[u8], proof_size: u8, chained: bool) -> Option<Hash> {
+    pub(super) fn get_merkle_root(
+        shred: &[u8],
+        proof_size: u8,
+        chained: bool,
+        resigned: bool,
+    ) -> Option<Hash> {
         debug_assert_eq!(
             shred::layout::get_shred_variant(shred).unwrap(),
             ShredVariant::MerkleCode {
                 proof_size,
                 chained,
+                resigned,
             },
         );
         // Shred index in the erasure batch.
@@ -460,7 +484,7 @@ impl ShredCode {
                 .ok()?;
             num_data_shreds.checked_add(position)?
         };
-        let proof_offset = Self::get_proof_offset(proof_size, chained).ok()?;
+        let proof_offset = Self::get_proof_offset(proof_size, chained, resigned).ok()?;
         let proof = get_merkle_proof(shred, proof_offset, proof_size).ok()?;
         let node = get_merkle_node(shred, SIZE_OF_SIGNATURE..proof_offset).ok()?;
         get_merkle_root(index, node, proof).ok()
@@ -474,9 +498,10 @@ impl<'a> ShredTrait<'a> for ShredData {
 
     // Also equal to:
     // ShredData::SIZE_OF_HEADERS
-    //       + ShredData::capacity(proof_size, chained).unwrap()
+    //       + ShredData::capacity(proof_size, chained, resigned).unwrap()
     //       + if chained { SIZE_OF_MERKLE_ROOT } else { 0 }
     //       + usize::from(proof_size) * SIZE_OF_MERKLE_PROOF_ENTRY
+    //       + if resigned { SIZE_OF_SIGNATURE } else { 0 }
     const SIZE_OF_PAYLOAD: usize =
         ShredCode::SIZE_OF_PAYLOAD - ShredCode::SIZE_OF_HEADERS + SIZE_OF_SIGNATURE;
     const SIZE_OF_HEADERS: usize = SIZE_OF_DATA_SHRED_HEADERS;
@@ -516,11 +541,12 @@ impl<'a> ShredTrait<'a> for ShredData {
         let ShredVariant::MerkleData {
             proof_size,
             chained,
+            resigned,
         } = self.common_header.shred_variant
         else {
             return Err(Error::InvalidShredVariant);
         };
-        let offset = Self::SIZE_OF_HEADERS + Self::capacity(proof_size, chained)?;
+        let offset = Self::SIZE_OF_HEADERS + Self::capacity(proof_size, chained, resigned)?;
         let mut shard = self.payload;
         shard.truncate(offset);
         shard.drain(..SIZE_OF_SIGNATURE);
@@ -534,11 +560,12 @@ impl<'a> ShredTrait<'a> for ShredData {
         let ShredVariant::MerkleData {
             proof_size,
             chained,
+            resigned,
         } = self.common_header.shred_variant
         else {
             return Err(Error::InvalidShredVariant);
         };
-        let offset = Self::SIZE_OF_HEADERS + Self::capacity(proof_size, chained)?;
+        let offset = Self::SIZE_OF_HEADERS + Self::capacity(proof_size, chained, resigned)?;
         self.payload
             .get(SIZE_OF_SIGNATURE..offset)
             .ok_or(Error::InvalidPayloadSize(self.payload.len()))
@@ -600,11 +627,12 @@ impl<'a> ShredTrait<'a> for ShredCode {
         let ShredVariant::MerkleCode {
             proof_size,
             chained,
+            resigned,
         } = self.common_header.shred_variant
         else {
             return Err(Error::InvalidShredVariant);
         };
-        let offset = Self::SIZE_OF_HEADERS + Self::capacity(proof_size, chained)?;
+        let offset = Self::SIZE_OF_HEADERS + Self::capacity(proof_size, chained, resigned)?;
         let mut shard = self.payload;
         shard.truncate(offset);
         shard.drain(..Self::SIZE_OF_HEADERS);
@@ -618,11 +646,12 @@ impl<'a> ShredTrait<'a> for ShredCode {
         let ShredVariant::MerkleCode {
             proof_size,
             chained,
+            resigned,
         } = self.common_header.shred_variant
         else {
             return Err(Error::InvalidShredVariant);
         };
-        let offset = Self::SIZE_OF_HEADERS + Self::capacity(proof_size, chained)?;
+        let offset = Self::SIZE_OF_HEADERS + Self::capacity(proof_size, chained, resigned)?;
         self.payload
             .get(Self::SIZE_OF_HEADERS..offset)
             .ok_or(Error::InvalidPayloadSize(self.payload.len()))
@@ -652,11 +681,12 @@ impl ShredDataTrait for ShredData {
         let ShredVariant::MerkleData {
             proof_size,
             chained,
+            resigned,
         } = self.common_header.shred_variant
         else {
             return Err(Error::InvalidShredVariant);
         };
-        let data_buffer_size = Self::capacity(proof_size, chained)?;
+        let data_buffer_size = Self::capacity(proof_size, chained, resigned)?;
         let size = usize::from(self.data_header.size);
         if size > self.payload.len()
             || size < Self::SIZE_OF_HEADERS
@@ -788,11 +818,12 @@ pub(super) fn recover(
         })
         .ok_or(TooFewParityShards)?;
     debug_assert_matches!(common_header.shred_variant, ShredVariant::MerkleCode { .. });
-    let (proof_size, chained) = match common_header.shred_variant {
+    let (proof_size, chained, resigned) = match common_header.shred_variant {
         ShredVariant::MerkleCode {
             proof_size,
             chained,
-        } => (proof_size, chained),
+            resigned,
+        } => (proof_size, chained, resigned),
         ShredVariant::MerkleData { .. } | ShredVariant::LegacyCode | ShredVariant::LegacyData => {
             return Err(Error::InvalidShredVariant);
         }
@@ -818,6 +849,7 @@ pub(super) fn recover(
                         == &ShredVariant::MerkleData {
                             proof_size,
                             chained,
+                            resigned,
                         }
                 }
                 Shred::ShredCode(shred) => {
@@ -830,6 +862,7 @@ pub(super) fn recover(
                         == &ShredVariant::MerkleCode {
                             proof_size,
                             chained,
+                            resigned,
                         }
                         && num_data_shreds == coding_header.num_data_shreds
                         && num_coding_shreds == coding_header.num_coding_shreds
@@ -886,6 +919,7 @@ pub(super) fn recover(
                 let expected_shred_variant = ShredVariant::MerkleData {
                     proof_size,
                     chained,
+                    resigned,
                 };
                 if shred_variant != expected_shred_variant
                     || common_header.slot != slot
@@ -994,16 +1028,18 @@ pub(super) fn make_shreds_from_data(
     }
     let now = Instant::now();
     let chained = chained_merkle_root.is_some();
+    let resigned = chained && is_last_in_slot;
     let erasure_batch_size =
         shredder::get_erasure_batch_size(DATA_SHREDS_PER_FEC_BLOCK, is_last_in_slot);
     let proof_size = get_proof_size(erasure_batch_size);
-    let data_buffer_size = ShredData::capacity(proof_size, chained)?;
+    let data_buffer_size = ShredData::capacity(proof_size, chained, resigned)?;
     let chunk_size = DATA_SHREDS_PER_FEC_BLOCK * data_buffer_size;
     let mut common_header = ShredCommonHeader {
         signature: Signature::default(),
         shred_variant: ShredVariant::MerkleData {
             proof_size,
             chained,
+            resigned,
         },
         slot,
         index: next_shred_index,
@@ -1046,7 +1082,7 @@ pub(super) fn make_shreds_from_data(
         // which can embed the remaining data.
         let (proof_size, data_buffer_size) = (1u8..32)
             .find_map(|proof_size| {
-                let data_buffer_size = ShredData::capacity(proof_size, chained).ok()?;
+                let data_buffer_size = ShredData::capacity(proof_size, chained, resigned).ok()?;
                 let num_data_shreds = (data.len() + data_buffer_size - 1) / data_buffer_size;
                 let num_data_shreds = num_data_shreds.max(1);
                 let erasure_batch_size =
@@ -1058,6 +1094,7 @@ pub(super) fn make_shreds_from_data(
         common_header.shred_variant = ShredVariant::MerkleData {
             proof_size,
             chained,
+            resigned,
         };
         common_header.fec_set_index = common_header.index;
         let chunks = if data.is_empty() {
@@ -1078,7 +1115,7 @@ pub(super) fn make_shreds_from_data(
     // Only the very last shred may have residual data buffer.
     debug_assert!(shreds.iter().rev().skip(1).all(|shred| {
         let proof_size = shred.proof_size().unwrap();
-        let capacity = ShredData::capacity(proof_size, chained).unwrap();
+        let capacity = ShredData::capacity(proof_size, chained, resigned).unwrap();
         shred.data().unwrap().len() == capacity
     }));
     // Adjust flags for the very last shred.
@@ -1198,6 +1235,7 @@ fn make_erasure_batch(
 ) -> Result<(/*merkle root:*/ Hash, Vec<Shred>), Error> {
     let num_data_shreds = shreds.len();
     let chained = chained_merkle_root.is_some();
+    let resigned = chained && is_last_in_slot;
     let erasure_batch_size = shredder::get_erasure_batch_size(num_data_shreds, is_last_in_slot);
     let num_coding_shreds = erasure_batch_size - num_data_shreds;
     let proof_size = get_proof_size(erasure_batch_size);
@@ -1205,6 +1243,7 @@ fn make_erasure_batch(
         == ShredVariant::MerkleData {
             proof_size,
             chained,
+            resigned
         }));
     let mut common_header = match shreds.first() {
         None => return Err(Error::from(TooFewShards)),
@@ -1232,6 +1271,7 @@ fn make_erasure_batch(
     common_header.shred_variant = ShredVariant::MerkleCode {
         proof_size,
         chained,
+        resigned,
     };
     let mut coding_header = CodingShredHeader {
         num_data_shreds: num_data_shreds as u16,
@@ -1302,59 +1342,69 @@ mod test {
     };
 
     // Total size of a data shred including headers and merkle proof.
-    fn shred_data_size_of_payload(proof_size: u8, chained: bool) -> usize {
+    fn shred_data_size_of_payload(proof_size: u8, chained: bool, resigned: bool) -> usize {
+        assert!(chained || !resigned);
         ShredData::SIZE_OF_HEADERS
-            + ShredData::capacity(proof_size, chained).unwrap()
+            + ShredData::capacity(proof_size, chained, resigned).unwrap()
             + if chained { SIZE_OF_MERKLE_ROOT } else { 0 }
             + usize::from(proof_size) * SIZE_OF_MERKLE_PROOF_ENTRY
+            + if resigned { SIZE_OF_SIGNATURE } else { 0 }
     }
 
     // Merkle proof is generated and signed after coding shreds are generated.
     // All payload excluding merkle proof and the signature are erasure coded.
     // Therefore the data capacity is equal to erasure encoded shard size minus
     // size of erasure encoded header.
-    fn shred_data_capacity(proof_size: u8, chained: bool) -> usize {
+    fn shred_data_capacity(proof_size: u8, chained: bool, resigned: bool) -> usize {
         const SIZE_OF_ERASURE_ENCODED_HEADER: usize =
             ShredData::SIZE_OF_HEADERS - SIZE_OF_SIGNATURE;
-        ShredCode::capacity(proof_size, chained).unwrap() - SIZE_OF_ERASURE_ENCODED_HEADER
+        ShredCode::capacity(proof_size, chained, resigned).unwrap() - SIZE_OF_ERASURE_ENCODED_HEADER
     }
 
-    fn shred_data_size_of_erasure_encoded_slice(proof_size: u8, chained: bool) -> usize {
+    fn shred_data_size_of_erasure_encoded_slice(
+        proof_size: u8,
+        chained: bool,
+        resigned: bool,
+    ) -> usize {
         ShredData::SIZE_OF_PAYLOAD
             - SIZE_OF_SIGNATURE
             - if chained { SIZE_OF_MERKLE_ROOT } else { 0 }
             - usize::from(proof_size) * SIZE_OF_MERKLE_PROOF_ENTRY
+            - if resigned { SIZE_OF_SIGNATURE } else { 0 }
     }
 
-    #[test_case(false)]
-    #[test_case(true)]
-    fn test_shred_data_size_of_payload(chained: bool) {
+    #[test_case(false, false)]
+    #[test_case(true, false)]
+    #[test_case(true, true)]
+    fn test_shred_data_size_of_payload(chained: bool, resigned: bool) {
         for proof_size in 0..0x15 {
             assert_eq!(
                 ShredData::SIZE_OF_PAYLOAD,
-                shred_data_size_of_payload(proof_size, chained)
+                shred_data_size_of_payload(proof_size, chained, resigned)
             );
         }
     }
 
-    #[test_case(false)]
-    #[test_case(true)]
-    fn test_shred_data_capacity(chained: bool) {
+    #[test_case(false, false)]
+    #[test_case(true, false)]
+    #[test_case(true, true)]
+    fn test_shred_data_capacity(chained: bool, resigned: bool) {
         for proof_size in 0..0x15 {
             assert_eq!(
-                ShredData::capacity(proof_size, chained).unwrap(),
-                shred_data_capacity(proof_size, chained)
+                ShredData::capacity(proof_size, chained, resigned).unwrap(),
+                shred_data_capacity(proof_size, chained, resigned)
             );
         }
     }
 
-    #[test_case(false)]
-    #[test_case(true)]
-    fn test_shred_code_capacity(chained: bool) {
+    #[test_case(false, false)]
+    #[test_case(true, false)]
+    #[test_case(true, true)]
+    fn test_shred_code_capacity(chained: bool, resigned: bool) {
         for proof_size in 0..0x15 {
             assert_eq!(
-                ShredCode::capacity(proof_size, chained).unwrap(),
-                shred_data_size_of_erasure_encoded_slice(proof_size, chained),
+                ShredCode::capacity(proof_size, chained, resigned).unwrap(),
+                shred_data_size_of_erasure_encoded_slice(proof_size, chained, resigned),
             );
         }
     }
@@ -1395,13 +1445,16 @@ mod test {
         }
     }
 
-    #[test_case(37, false)]
-    #[test_case(37, true)]
-    #[test_case(64, false)]
-    #[test_case(64, true)]
-    #[test_case(73, false)]
-    #[test_case(73, true)]
-    fn test_recover_merkle_shreds(num_shreds: usize, chained: bool) {
+    #[test_case(37, false, false)]
+    #[test_case(37, true, false)]
+    #[test_case(37, true, true)]
+    #[test_case(64, false, false)]
+    #[test_case(64, true, false)]
+    #[test_case(64, true, true)]
+    #[test_case(73, false, false)]
+    #[test_case(73, true, false)]
+    #[test_case(73, true, true)]
+    fn test_recover_merkle_shreds(num_shreds: usize, chained: bool, resigned: bool) {
         let mut rng = rand::thread_rng();
         let reed_solomon_cache = ReedSolomonCache::default();
         for num_data_shreds in 1..num_shreds {
@@ -1409,6 +1462,7 @@ mod test {
             run_recover_merkle_shreds(
                 &mut rng,
                 chained,
+                resigned,
                 num_data_shreds,
                 num_coding_shreds,
                 &reed_solomon_cache,
@@ -1419,6 +1473,7 @@ mod test {
     fn run_recover_merkle_shreds<R: Rng + CryptoRng>(
         rng: &mut R,
         chained: bool,
+        resigned: bool,
         num_data_shreds: usize,
         num_coding_shreds: usize,
         reed_solomon_cache: &ReedSolomonCache,
@@ -1426,12 +1481,13 @@ mod test {
         let keypair = Keypair::new();
         let num_shreds = num_data_shreds + num_coding_shreds;
         let proof_size = get_proof_size(num_shreds);
-        let capacity = ShredData::capacity(proof_size, chained).unwrap();
+        let capacity = ShredData::capacity(proof_size, chained, resigned).unwrap();
         let common_header = ShredCommonHeader {
             signature: Signature::default(),
             shred_variant: ShredVariant::MerkleData {
                 proof_size,
                 chained,
+                resigned,
             },
             slot: 145_865_705,
             index: 1835,
@@ -1490,6 +1546,7 @@ mod test {
                 shred_variant: ShredVariant::MerkleCode {
                     proof_size,
                     chained,
+                    resigned,
                 },
                 index: common_header.index + i as u32 + 7,
                 ..common_header
@@ -1662,6 +1719,7 @@ mod test {
         let thread_pool = ThreadPoolBuilder::new().num_threads(2).build().unwrap();
         let keypair = Keypair::new();
         let chained_merkle_root = chained.then(|| Hash::new_from_array(rng.gen()));
+        let resigned = chained && is_last_in_slot;
         let slot = 149_745_689;
         let parent_slot = slot - rng.gen_range(1..65536);
         let shred_version = rng.gen();
@@ -1754,6 +1812,7 @@ mod test {
                         ShredVariant::MerkleCode {
                             proof_size,
                             chained,
+                            resigned
                         }
                     );
                     num_coding_shreds += 1;
@@ -1765,6 +1824,7 @@ mod test {
                         ShredVariant::MerkleData {
                             proof_size,
                             chained,
+                            resigned
                         }
                     );
                     assert!(common_header.fec_set_index <= common_header.index);
